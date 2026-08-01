@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "902958622975",
+    "project_id": "pcapk-5fa50",
+    "storage_bucket": "pcapk-5fa50.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:902958622975:android:32b3f10d51c0cdcfc704ca",
+        "android_client_info": {
+          "package_name": "com.pca.control"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAYcxbbzYpis_ti66T-qO9tHFCWGzRqTYU"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

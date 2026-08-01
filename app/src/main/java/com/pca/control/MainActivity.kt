@@ -1,0 +1,212 @@
+package com.pca.control
+
+import android.Manifest
+import android.content.pm.PackageManager
+import android.os.Build
+import android.os.Bundle
+import androidx.activity.ComponentActivity
+import androidx.activity.compose.setContent
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.material3.Surface
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Modifier
+import androidx.core.content.ContextCompat
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.pca.control.commands.CommandExecutor
+import com.pca.control.commands.CommandSender
+import com.pca.control.commands.RemoteCommand
+import com.pca.control.data.AppRole
+import com.pca.control.data.LinkStatus
+import com.pca.control.devicepolicy.DevicePolicyController
+import com.pca.control.pairing.PairingState
+import com.pca.control.ui.guard.GuardStatusScreen
+import com.pca.control.ui.onboarding.GuardPairingScreen
+import com.pca.control.ui.onboarding.ParentalLinkScreen
+import com.pca.control.ui.onboarding.RoleSelectScreen
+import com.pca.control.ui.parental.ParentalHomeScreen
+import com.pca.control.ui.theme.PcaTheme
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.launch
+
+class MainActivity : ComponentActivity() {
+
+    private lateinit var app: PcaApp
+    private lateinit var policy: DevicePolicyController
+
+    private val adminLauncher = registerForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { /* refreshed via recomposition */ }
+
+    private val permissionLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions()
+    ) { }
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        app = application as PcaApp
+        policy = DevicePolicyController(this, app.preferences)
+
+        val deepLinkCode = intent?.data?.getQueryParameter("code")
+
+        setContent {
+            PcaTheme {
+                Surface(modifier = Modifier.fillMaxSize()) {
+                    val scope = rememberCoroutineScope()
+                    val role by app.preferences.roleFlow.collectAsStateWithLifecycle(AppRole.NONE)
+                    val linkStatus by app.preferences.linkStatusFlow.collectAsStateWithLifecycle(LinkStatus.UNLINKED)
+                    val guardPhone by app.preferences.guardPhoneFlow.collectAsStateWithLifecycle("")
+                    val blockActive by app.preferences.blockActiveFlow.collectAsStateWithLifecycle(false)
+
+                    var pairCode by remember { mutableStateOf<String?>(null) }
+                    var statusFlow by remember { mutableStateOf<Flow<PairingState>?>(null) }
+                    var error by remember { mutableStateOf<String?>(null) }
+                    var busy by remember { mutableStateOf(false) }
+                    var parentalStatus by remember { mutableStateOf<String?>(null) }
+                    var launcherHidden by remember { mutableStateOf(false) }
+
+                    LaunchedEffect(Unit) {
+                        launcherHidden = app.preferences.isLauncherHidden()
+                        CommandExecutor.startListeningIfGuard(applicationContext)
+                        if (!deepLinkCode.isNullOrBlank() && role == AppRole.NONE) {
+                            // deep link handled after role select on parental path
+                        }
+                    }
+
+                    when {
+                        role == AppRole.NONE -> RoleSelectScreen(
+                            onParental = {
+                                scope.launch {
+                                    app.preferences.setRole(AppRole.PARENTAL)
+                                }
+                            },
+                            onGuard = {
+                                scope.launch {
+                                    app.preferences.setRole(AppRole.GUARD)
+                                }
+                            }
+                        )
+
+                        role == AppRole.PARENTAL && linkStatus != LinkStatus.LINKED -> ParentalLinkScreen(
+                            busy = busy,
+                            error = error,
+                            onLink = { code, phone ->
+                                scope.launch {
+                                    busy = true
+                                    error = null
+                                    val result = app.pairingRepository.linkAsParent(
+                                        code.ifBlank { deepLinkCode.orEmpty() },
+                                        phone
+                                    )
+                                    busy = false
+                                    result.onFailure { error = it.message }
+                                    result.onSuccess {
+                                        parentalStatus = "Linked to Guard"
+                                    }
+                                }
+                            }
+                        )
+
+                        role == AppRole.PARENTAL -> ParentalHomeScreen(
+                            guardPhone = guardPhone,
+                            statusMessage = parentalStatus,
+                            sending = busy,
+                            onSavePhone = { phone ->
+                                scope.launch {
+                                    app.preferences.setGuardPhone(phone)
+                                    parentalStatus = "Guard phone saved"
+                                }
+                            },
+                            onSend = { command ->
+                                scope.launch {
+                                    if (ContextCompat.checkSelfPermission(
+                                            this@MainActivity,
+                                            Manifest.permission.SEND_SMS
+                                        ) != PackageManager.PERMISSION_GRANTED &&
+                                        app.preferences.getGuardPhone().isNotBlank()
+                                    ) {
+                                        permissionLauncher.launch(arrayOf(Manifest.permission.SEND_SMS))
+                                    }
+                                    busy = true
+                                    parentalStatus = null
+                                    val sender = CommandSender(this@MainActivity, app.preferences)
+                                    val result = sender.send(command)
+                                    busy = false
+                                    parentalStatus = result.fold(
+                                        onSuccess = { "Sent ${command.wire} via Firebase${if (app.preferences.getGuardPhone().isNotBlank()) " + SMS" else ""}" },
+                                        onFailure = { it.message ?: "Send failed" }
+                                    )
+                                }
+                            }
+                        )
+
+                        role == AppRole.GUARD && linkStatus != LinkStatus.LINKED -> GuardPairingScreen(
+                            code = pairCode,
+                            qrPayload = pairCode?.let { "pca://pair?code=$it" },
+                            statusFlow = statusFlow,
+                            error = error,
+                            onGenerate = {
+                                scope.launch {
+                                    error = null
+                                    runCatching {
+                                        val code = app.pairingRepository.startGuardPairing()
+                                        pairCode = code
+                                        statusFlow = app.pairingRepository.observeGuardPairing(code)
+                                    }.onFailure {
+                                        error = it.message ?: "Could not start pairing. Check Firebase google-services.json."
+                                    }
+                                }
+                            },
+                            onLinked = { peerId, pairId ->
+                                scope.launch {
+                                    app.pairingRepository.markGuardLinked(peerId, pairId)
+                                    policy.hideLauncherIcon()
+                                    launcherHidden = true
+                                    CommandExecutor.startListeningIfGuard(applicationContext)
+                                    requestGuardPermissions()
+                                }
+                            },
+                            onEnableAdmin = {
+                                adminLauncher.launch(policy.requestAdminIntent())
+                            },
+                            isAdminActive = policy.isAdminActive(),
+                            isDeviceOwner = policy.isDeviceOwner()
+                        )
+
+                        else -> GuardStatusScreen(
+                            isAdminActive = policy.isAdminActive(),
+                            isDeviceOwner = policy.isDeviceOwner(),
+                            blockActive = blockActive,
+                            launcherHidden = launcherHidden,
+                            onEnableAdmin = {
+                                adminLauncher.launch(policy.requestAdminIntent())
+                            },
+                            onRequestSmsPermission = { requestGuardPermissions() }
+                        )
+                    }
+                }
+            }
+        }
+    }
+
+    private fun requestGuardPermissions() {
+        val needed = mutableListOf(
+            Manifest.permission.RECEIVE_SMS,
+            Manifest.permission.READ_SMS
+        )
+        if (Build.VERSION.SDK_INT >= 33) {
+            needed += Manifest.permission.POST_NOTIFICATIONS
+        }
+        val missing = needed.filter {
+            ContextCompat.checkSelfPermission(this, it) != PackageManager.PERMISSION_GRANTED
+        }
+        if (missing.isNotEmpty()) {
+            permissionLauncher.launch(missing.toTypedArray())
+        }
+    }
+}

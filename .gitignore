@@ -1,0 +1,18 @@
+# Gradle
+.gradle/
+build/
+**/build/
+local.properties
+
+# IDE
+.idea/
+*.iml
+.vscode/
+*.DS_Store
+
+# Keystores
+*.jks
+*.keystore
+
+# Firebase — keep placeholder in repo; replace with your real file locally if needed
+# app/google-services.json
