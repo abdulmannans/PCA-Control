@@ -66,13 +66,17 @@ fun GuardStatusScreen(
         Spacer(Modifier.height(12.dp))
         Text(
             if (isDeviceOwner) {
-                "Device Owner kiosk: Home / Recents gestures are blocked while locked."
+                "Device Owner kiosk: Home / Recents are blocked while locked (no pin prompt)."
             } else {
-                "For Recents / gesture lock: set Device Owner (see README) or accept Screen pinning when prompted on lock."
+                "Device Owner is OFF. Without it, Android cannot force Recents/Home lock — the child can leave. Set Device Owner via ADB (see README) for real lock."
             },
             style = MaterialTheme.typography.bodySmall,
             textAlign = TextAlign.Center,
-            color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.65f)
+            color = if (isDeviceOwner) {
+                MaterialTheme.colorScheme.onBackground.copy(alpha = 0.65f)
+            } else {
+                MaterialTheme.colorScheme.error
+            }
         )
         Spacer(Modifier.height(24.dp))
         if (!isAdminActive) {

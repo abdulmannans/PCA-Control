@@ -94,8 +94,8 @@ class LockActivity : ComponentActivity() {
             registerReceiver(clearReceiver, filter)
         }
 
-        // Always try lock-task (DO) or screen pinning (non-DO)
-        if (intent.getBooleanExtra(EXTRA_START_LOCK_TASK, true)) {
+        // Hard kiosk only with Device Owner (no optional pin prompt)
+        if (intent.getBooleanExtra(EXTRA_START_LOCK_TASK, false) && policy.isDeviceOwner()) {
             policy.enableLockTask(this)
         }
 
@@ -197,6 +197,7 @@ class LockActivity : ComponentActivity() {
     override fun onResume() {
         super.onResume()
         isResumedFlag.set(true)
+        LockNotifications.cancelFullScreenLock(this)
         applyImmersive()
         lifecycleScope.launch {
             val app = application as PcaApp
@@ -204,10 +205,8 @@ class LockActivity : ComponentActivity() {
                 sticky = false
                 isResumedFlag.set(false)
                 finish()
-            } else if (intent.getBooleanExtra(EXTRA_START_LOCK_TASK, true)) {
-                if (!isInLockTaskMode()) {
-                    policy.enableLockTask(this@LockActivity)
-                }
+            } else if (policy.isDeviceOwner() && !isInLockTaskMode()) {
+                policy.enableLockTask(this@LockActivity)
             }
         }
     }
@@ -237,8 +236,12 @@ class LockActivity : ComponentActivity() {
         lifecycleScope.launch {
             val app = application as PcaApp
             if (app.preferences.isLockActive()) {
-                policy.launchLockUi(startLockTask = true)
-                LockNotifications.postFullScreenLock(this@LockActivity)
+                policy.launchLockUiImmediate(startLockTask = true)
+                // Prefer activity; only notify if still not up
+                kotlinx.coroutines.delay(350)
+                if (!isResumedFlag.get()) {
+                    LockNotifications.postFullScreenLock(this@LockActivity)
+                }
             }
         }
     }

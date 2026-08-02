@@ -132,8 +132,12 @@ class GuardCommandService : Service() {
                     }
                     if (!LockActivity.isResumedNow) {
                         Log.i(TAG, "Watchdog: re-showing lock UI")
-                        policy.launchLockUi(startLockTask = true)
-                        LockNotifications.postFullScreenLock(applicationContext)
+                        policy.launchLockUiImmediate(startLockTask = true)
+                        // Notification only as silent backup if still not visible shortly after
+                        delay(300)
+                        if (!LockActivity.isResumedNow) {
+                            LockNotifications.postFullScreenLock(applicationContext)
+                        }
                     }
                 } catch (e: Exception) {
                     Log.w(TAG, "Watchdog tick failed", e)
@@ -144,7 +148,7 @@ class GuardCommandService : Service() {
 
     companion object {
         private const val TAG = "GuardCommandService"
-        private const val WATCHDOG_MS = 1500L
+        private const val WATCHDOG_MS = 500L
 
         fun start(context: Context) {
             val app = context.applicationContext

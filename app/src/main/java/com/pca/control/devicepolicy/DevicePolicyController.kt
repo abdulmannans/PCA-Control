@@ -16,8 +16,12 @@ import com.pca.control.lock.LockNotifications
 import com.pca.control.util.PhoneNumbers
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
+import android.os.Handler
+import android.os.Looper
+import android.os.PowerManager
 import kotlin.random.Random
 
 class DevicePolicyController(
@@ -56,10 +60,15 @@ class DevicePolicyController(
                 preferences.setLockPin(pin)
                 preferences.setLockActive(true)
                 deliverPinToParent(pin)
-                launchLockUi(startLockTask = true)
-                LockNotifications.postFullScreenLock(context)
+                // Instant UI on main thread; notification only if activity did not appear
+                launchLockUiImmediate()
+                delay(400)
+                if (!LockActivity.isResumedNow) {
+                    LockNotifications.postFullScreenLock(context)
+                }
             } catch (e: Exception) {
                 Log.e(TAG, "activateLock failed", e)
+                LockNotifications.postFullScreenLock(context)
             }
         }
     }
@@ -102,34 +111,70 @@ class DevicePolicyController(
     }
 
     fun launchLockUi(startLockTask: Boolean = false) {
+        launchLockUiImmediate(startLockTask)
+    }
+
+    /** Wake screen + start LockActivity on the main thread (instant when allowed). */
+    fun launchLockUiImmediate(startLockTask: Boolean = true) {
         enableLockHomeAlias()
+        wakeScreen()
         val intent = Intent(context, LockActivity::class.java).apply {
             addFlags(
                 Intent.FLAG_ACTIVITY_NEW_TASK or
                     Intent.FLAG_ACTIVITY_CLEAR_TOP or
                     Intent.FLAG_ACTIVITY_SINGLE_TOP or
-                    Intent.FLAG_ACTIVITY_REORDER_TO_FRONT
+                    Intent.FLAG_ACTIVITY_REORDER_TO_FRONT or
+                    Intent.FLAG_ACTIVITY_NO_USER_ACTION
             )
-            // Always request lock-task / screen-pinning attempt
-            putExtra(LockActivity.EXTRA_START_LOCK_TASK, startLockTask)
+            // Only Device Owner gets forced lock-task (no optional pin dialog)
+            putExtra(LockActivity.EXTRA_START_LOCK_TASK, startLockTask && isDeviceOwner())
         }
-        try {
-            context.startActivity(intent)
-        } catch (e: Exception) {
-            Log.e(TAG, "startActivity(LockActivity) failed — relying on full-screen notification", e)
-            LockNotifications.postFullScreenLock(context)
+        val start: () -> Unit = {
+            try {
+                context.startActivity(intent)
+            } catch (e: Exception) {
+                Log.e(TAG, "startActivity(LockActivity) failed", e)
+            }
+            Unit
+        }
+        if (Looper.myLooper() == Looper.getMainLooper()) {
+            start()
+        } else {
+            Handler(Looper.getMainLooper()).post(start)
         }
     }
 
-    /** Device Owner = hard kiosk; otherwise screen pinning (may prompt once). */
-    fun enableLockTask(activity: android.app.Activity) {
+    private fun wakeScreen() {
         try {
-            if (isDeviceOwner()) {
-                dpm.setLockTaskPackages(admin, arrayOf(context.packageName))
-            }
+            val pm = context.getSystemService(Context.POWER_SERVICE) as PowerManager
+            @Suppress("DEPRECATION")
+            val wl = pm.newWakeLock(
+                PowerManager.FULL_WAKE_LOCK or
+                    PowerManager.ACQUIRE_CAUSES_WAKEUP or
+                    PowerManager.ON_AFTER_RELEASE,
+                "pca:lock"
+            )
+            wl.acquire(3000L)
+            wl.release()
+        } catch (e: Exception) {
+            Log.w(TAG, "wakeScreen failed", e)
+        }
+    }
+
+    /**
+     * Hard kiosk only when Device Owner.
+     * Do NOT call startLockTask without DO — that shows optional screen-pinning the child can refuse.
+     */
+    fun enableLockTask(activity: android.app.Activity) {
+        if (!isDeviceOwner()) {
+            Log.i(TAG, "Skipping lock-task: Device Owner required for non-optional kiosk")
+            return
+        }
+        try {
+            dpm.setLockTaskPackages(admin, arrayOf(context.packageName))
             activity.startLockTask()
         } catch (e: Exception) {
-            Log.w(TAG, "startLockTask / screen pin failed", e)
+            Log.w(TAG, "startLockTask failed", e)
         }
     }
 

@@ -45,15 +45,23 @@ adb install -r PCA-Control.apk
 5. Guard launcher icon is **hidden**. Re-open via **Settings → Apps → PCA Control** if needed.
 6. On Parent home, optionally save the Guard phone number for SMS command fallback.
 
-## Background lock (v1.1.1)
+## Background lock (v1.1.2)
 
-Remote lock used to fail when PCA was not on screen (Android blocks background activity starts). Guard now:
+- Guard runs a foreground service and tries to open the lock screen **immediately** on the main thread.
+- A full-screen notification is only a **fallback** if the OS blocked the activity (and is cleared once the lock screen is open).
+- **Screen pinning is no longer used** — it is optional for the child and not reliable.
 
-- Runs `GuardCommandService` while linked
-- Posts a **full-screen lock notification** when Parent locks
-- Re-shows the lock UI via a watchdog if gestures dismiss it
+### Device Owner required for hard lock
 
-On first lock without Device Owner, Android may ask to **pin the screen** — accept that for stronger Home/Recents blocking.
+Without Device Owner, Android will not let an app permanently block Home / Recents. Soft sticky re-launch still fights escape, but a determined child can leave.
+
+On the Guard phone:
+
+```bash
+adb shell dpm set-device-owner com.pca.control/.devicepolicy.PcaDeviceAdminReceiver
+```
+
+Then Home/Recents are blocked while locked with **no pin prompt**.
 
 ## Device Owner (hard lock / uninstall protection)
 
@@ -63,7 +71,7 @@ On the **Guard** phone (USB debugging, preferably a clean user with no accounts)
 adb shell dpm set-device-owner com.pca.control/.devicepolicy.PcaDeviceAdminReceiver
 ```
 
-With Device Owner, lock task fully blocks Home/Recents while locked. Without it, screen pinning + sticky re-launch is the soft path.
+With Device Owner, lock task fully blocks Home/Recents while locked.
 
 ## Parental actions
 
@@ -110,4 +118,4 @@ service cloud.firestore {
 
 ## Package
 
-`com.pca.control` — version **1.1.1**
+`com.pca.control` — version **1.1.2**
