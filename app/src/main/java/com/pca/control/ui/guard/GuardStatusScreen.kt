@@ -21,7 +21,7 @@ import androidx.compose.ui.unit.dp
 fun GuardStatusScreen(
     isAdminActive: Boolean,
     isDeviceOwner: Boolean,
-    blockActive: Boolean,
+    lockActive: Boolean,
     launcherHidden: Boolean,
     onEnableAdmin: () -> Unit,
     onRequestSmsPermission: () -> Unit
@@ -40,23 +40,25 @@ fun GuardStatusScreen(
         )
         Spacer(Modifier.height(12.dp))
         Text(
-            "This phone is linked. The app icon is ${if (launcherHidden) "hidden" else "visible"} in the app drawer. Open via Settings → Apps → PCA Control if needed.",
+            when {
+                lockActive -> "Device is locked by Parent"
+                else -> "Linked and listening for Parent commands"
+            },
             textAlign = TextAlign.Center,
             color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.75f)
         )
         Spacer(Modifier.height(16.dp))
         Text(
             buildString {
-                append(if (isAdminActive) "Device Admin: ON\n" else "Device Admin: OFF\n")
-                append(
-                    if (isDeviceOwner) "Device Owner: ON (uninstall protected)\n"
-                    else "Device Owner: OFF — run ADB set-device-owner for uninstall protection\n"
-                )
-                append(if (blockActive) "App block: ACTIVE" else "App block: inactive")
+                append(if (isAdminActive) "Device Admin: on" else "Device Admin: off")
+                append(" · ")
+                append(if (isDeviceOwner) "Device Owner: on" else "Device Owner: off")
+                if (launcherHidden) append(" · Icon hidden")
             },
+            style = MaterialTheme.typography.bodySmall,
             textAlign = TextAlign.Center
         )
-        Spacer(Modifier.height(20.dp))
+        Spacer(Modifier.height(24.dp))
         if (!isAdminActive) {
             Button(onClick = onEnableAdmin, modifier = Modifier.fillMaxWidth()) {
                 Text("Enable device admin")
@@ -64,7 +66,14 @@ fun GuardStatusScreen(
             Spacer(Modifier.height(8.dp))
         }
         Button(onClick = onRequestSmsPermission, modifier = Modifier.fillMaxWidth()) {
-            Text("Allow SMS commands")
+            Text("Grant SMS permissions")
         }
+        Spacer(Modifier.height(12.dp))
+        Text(
+            "SMS commands are accepted only from the Parent phone number saved during pairing.",
+            style = MaterialTheme.typography.bodySmall,
+            textAlign = TextAlign.Center,
+            color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f)
+        )
     }
 }

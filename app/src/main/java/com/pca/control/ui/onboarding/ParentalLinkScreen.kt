@@ -21,7 +21,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardCapitalization
-import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 
@@ -29,10 +28,9 @@ import androidx.compose.ui.unit.dp
 fun ParentalLinkScreen(
     busy: Boolean,
     error: String?,
-    onLink: (code: String, guardPhone: String) -> Unit
+    onLink: (code: String) -> Unit
 ) {
     var code by remember { mutableStateOf("") }
-    var phone by remember { mutableStateOf("") }
 
     Column(
         modifier = Modifier
@@ -48,7 +46,7 @@ fun ParentalLinkScreen(
         )
         Spacer(Modifier.height(8.dp))
         Text(
-            "Enter the 6-character code shown on the Guard phone. Optionally save the Guard number for SMS commands.",
+            "Enter the 6-character pairing code sent to this phone by SMS.",
             textAlign = TextAlign.Center,
             color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.7f)
         )
@@ -63,18 +61,9 @@ fun ParentalLinkScreen(
                 capitalization = KeyboardCapitalization.Characters
             )
         )
-        Spacer(Modifier.height(12.dp))
-        OutlinedTextField(
-            value = phone,
-            onValueChange = { phone = it.filter { ch -> ch.isDigit() || ch == '+' }.take(16) },
-            label = { Text("Guard phone (for SMS)") },
-            singleLine = true,
-            modifier = Modifier.fillMaxWidth(),
-            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone)
-        )
         Spacer(Modifier.height(20.dp))
         Button(
-            onClick = { onLink(code, phone) },
+            onClick = { onLink(code) },
             enabled = !busy && code.length == 6,
             modifier = Modifier.fillMaxWidth()
         ) {

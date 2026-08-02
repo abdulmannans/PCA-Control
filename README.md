@@ -1,6 +1,6 @@
 # PCA Control — Parental / Guard Android App
 
-Personal parental-control APK: one install, choose **Parental** or **Guard**, link with a code/QR, then lock or lock+block the Guard phone over **Firebase** and **SMS**.
+Personal parental-control APK: one install, choose **Parental** or **Guard**, link via SMS pairing code, then lock/unlock the Guard phone over **Firebase** and **SMS**.
 
 ## Prerequisites
 
@@ -22,27 +22,29 @@ export PATH="$JAVA_HOME/bin:$ANDROID_HOME/platform-tools:$PATH"
 
 ```bash
 cd /Users/abdulmannansiddiquei/Sites/PCA
-./gradlew assembleDebug
+./gradlew assembleRelease
 ```
 
-APK path:
+APK path (also copied to repo root):
 
-`app/build/outputs/apk/debug/app-debug.apk`
+`app/build/outputs/apk/release/app-release.apk` → [`PCA-Control.apk`](PCA-Control.apk)
 
 Install on both phones:
 
 ```bash
-adb install -r app/build/outputs/apk/debug/app-debug.apk
+adb install -r PCA-Control.apk
 ```
 
-## First-run flow
+## First-run flow (v1.1)
 
 1. Install the same APK on parent and child (Guard) phones.
-2. **Guard phone:** open app → **Guard** → enable Device Admin → **Generate pairing code** → leave QR/code on screen.
-3. **Parental phone:** open app → **Parental** → enter code (and optional Guard phone number for SMS) → **Link**.
+2. **Guard phone:** open app → **Guard** → enable Device Admin → enter **Parent phone** (prefer country code, e.g. `+919004875711`) → **Send pairing code**.
+   - Guard does **not** show the code or QR; Parent receives `PCA PAIR XXXXXX` by SMS.
+3. **Parental phone:** open app → **Parental** → enter the SMS code → **Link**.
 4. After link, Guard launcher icon is **hidden**. Re-open via **Settings → Apps → PCA Control** if needed.
+5. On Parent home, optionally save the Guard phone number for SMS command fallback.
 
-## Device Owner (uninstall protection)
+## Device Owner (hard lock / uninstall protection)
 
 On the **Guard** phone (USB debugging, preferably a clean user with no accounts):
 
@@ -50,31 +52,28 @@ On the **Guard** phone (USB debugging, preferably a clean user with no accounts)
 adb shell dpm set-device-owner com.pca.control/.devicepolicy.PcaDeviceAdminReceiver
 ```
 
-Without Device Owner, lock still works with Device Admin; **lock+block apps** and hard uninstall protection need Device Owner.
+Without Device Owner, lock still works as a soft Home override (Back blocked; Recents/Settings may still escape on some OEMs). **Lock task kiosk** and uninstall protection need Device Owner.
 
 ## Parental actions
 
 | Action | Behavior |
 |--------|----------|
-| **Lock device** | Immediate screen lock (`lockNow`) — recommended |
-| **Lock + block apps** | Lock + suspend user apps until unlock (Device Owner) |
-| **Unlock / clear app block** | Clears package suspensions |
-| **Power off** | Disabled — tagged **not workable / risky** (Android blocks third-party shutdown) |
+| **Lock device** | Custom lock screen overrides Home; 6-digit unlock PIN is SMS’d to Parent and shown in the Parent app |
+| **Unlock** | Clears the custom lock (remote). Typing the PIN on the Guard lock screen also unlocks |
 
 Commands are written to Firestore (`devices/{guardId}/commands`) and, if a Guard number is saved, also sent as SMS.
 
-## SMS keywords (text the Guard phone)
+## SMS keywords (text the Guard phone from the **Parent** number only)
 
 - `PCA LOCK`
-- `PCA LOCKBLOCK`
 - `PCA UNLOCK`
 
-Guard must grant SMS permission.
+Guard only accepts SMS commands when the sender matches the saved Parent phone (formats like `+91…` vs local 10-digit are treated as the same number).
 
 ## Firestore collections
 
 - `pairings/{CODE}` — short-lived pairing session
-- `devices/{deviceId}` — device registry
+- `devices/{deviceId}` — device registry (`activeLockPin`, `lockActive`, …)
 - `devices/{guardId}/commands/{id}` — remote commands (`action`, `status`)
 
 Suggested rules for personal use (tighten for production):
@@ -92,11 +91,12 @@ service cloud.firestore {
 
 ## Limitations
 
+- Soft lock without Device Owner is a **deterrent**, not a jail — Recents/Settings can escape on many phones.
+- Prefer saving parent numbers with country code (`+91…`) so SMS sender matching is reliable.
 - Real **power off** is not possible without root/system privileges.
 - Some OEMs kill background listeners; Device Owner + disabling battery optimization helps.
 - Placeholder `google-services.json` builds the APK but pairing/FCM will fail until you add your Firebase file.
-- Hiding the icon removes it from the app drawer; the package remains visible under Settings → Apps unless further restricted as Device Owner.
 
 ## Package
 
-`com.pca.control`
+`com.pca.control` — version **1.1.0**

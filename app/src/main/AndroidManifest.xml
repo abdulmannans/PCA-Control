@@ -33,6 +33,28 @@
             </intent-filter>
         </activity>
 
+        <activity
+            android:name=".LockActivity"
+            android:excludeFromRecents="true"
+            android:exported="true"
+            android:launchMode="singleTask"
+            android:showWhenLocked="true"
+            android:turnScreenOn="true"
+            android:theme="@style/Theme.PCA" />
+
+        <!-- Enabled only while Guard is locked — overrides Home -->
+        <activity-alias
+            android:name=".LockHomeAlias"
+            android:enabled="false"
+            android:exported="true"
+            android:targetActivity=".LockActivity">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.HOME" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+        </activity-alias>
+
         <!-- Launcher alias: disabled after Guard links to hide from app drawer -->
         <activity-alias
             android:name=".LauncherAlias"

@@ -6,6 +6,7 @@ import android.util.Log
 import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
 import com.pca.control.data.AppPreferences
+import com.pca.control.util.PhoneNumbers
 import kotlinx.coroutines.tasks.await
 
 class CommandSender(
@@ -28,8 +29,8 @@ class CommandSender(
                 )
             ).await()
 
-        val phone = preferences.getGuardPhone()
-        if (phone.isNotBlank()) {
+        val phone = PhoneNumbers.sanitize(preferences.getGuardPhone())
+        if (phone.isNotBlank() && PhoneNumbers.isValid(phone)) {
             sendSms(phone, command.smsKeyword)
         }
     }

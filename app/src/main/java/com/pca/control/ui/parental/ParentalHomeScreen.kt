@@ -24,17 +24,22 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.pca.control.commands.RemoteCommand
+import com.pca.control.util.PhoneNumbers
 
 @Composable
 fun ParentalHomeScreen(
     guardPhone: String,
+    activeLockPin: String?,
+    lockActive: Boolean,
     statusMessage: String?,
     sending: Boolean,
     onSavePhone: (String) -> Unit,
     onSend: (RemoteCommand) -> Unit
 ) {
     var phone by remember(guardPhone) { mutableStateOf(guardPhone) }
+    var phoneError by remember { mutableStateOf<String?>(null) }
 
     Column(
         modifier = Modifier
@@ -55,20 +60,54 @@ fun ParentalHomeScreen(
 
         OutlinedTextField(
             value = phone,
-            onValueChange = { phone = it.filter { ch -> ch.isDigit() || ch == '+' }.take(16) },
+            onValueChange = {
+                phone = it.filter { ch -> ch.isDigit() || ch == '+' || ch == ' ' || ch == '-' }.take(20)
+                phoneError = null
+            },
             label = { Text("Guard phone number") },
+            placeholder = { Text("+91…") },
+            supportingText = { Text("For SMS commands — include country code when possible") },
             singleLine = true,
+            isError = phoneError != null,
             modifier = Modifier.fillMaxWidth(),
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone)
         )
+        if (phoneError != null) {
+            Text(phoneError!!, color = MaterialTheme.colorScheme.error)
+        }
         OutlinedButton(
-            onClick = { onSavePhone(phone) },
+            onClick = {
+                val sanitized = PhoneNumbers.sanitize(phone)
+                if (sanitized.isNotBlank() && !PhoneNumbers.isValid(sanitized)) {
+                    phoneError = "Enter a valid number (10–15 digits)"
+                    return@OutlinedButton
+                }
+                onSavePhone(sanitized)
+            },
             modifier = Modifier.fillMaxWidth()
         ) {
             Text("Save phone number")
         }
 
         Spacer(Modifier.height(8.dp))
+
+        if (lockActive && !activeLockPin.isNullOrBlank()) {
+            Text("Guard unlock code", fontWeight = FontWeight.SemiBold)
+            Text(
+                activeLockPin,
+                fontSize = 36.sp,
+                fontWeight = FontWeight.Bold,
+                letterSpacing = 6.sp,
+                color = MaterialTheme.colorScheme.primary
+            )
+            Text(
+                "Also sent by SMS. Use Unlock below or type this on the Guard phone.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f)
+            )
+            Spacer(Modifier.height(8.dp))
+        }
+
         Text("Actions", fontWeight = FontWeight.SemiBold)
 
         Button(
@@ -76,35 +115,15 @@ fun ParentalHomeScreen(
             enabled = !sending,
             modifier = Modifier.fillMaxWidth()
         ) {
-            Text("Lock device (recommended)")
-        }
-        Button(
-            onClick = { onSend(RemoteCommand.LOCK_BLOCK) },
-            enabled = !sending,
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Text("Lock + block apps")
+            Text("Lock device")
         }
         OutlinedButton(
             onClick = { onSend(RemoteCommand.UNLOCK) },
             enabled = !sending,
             modifier = Modifier.fillMaxWidth()
         ) {
-            Text("Unlock / clear app block")
+            Text("Unlock")
         }
-
-        OutlinedButton(
-            onClick = { },
-            enabled = false,
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Text("Power off (not workable / risky)")
-        }
-        Text(
-            "Android does not allow third-party apps to power off the phone without root or system privileges. This control is intentionally disabled.",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.error
-        )
 
         if (statusMessage != null) {
             Spacer(Modifier.height(8.dp))
@@ -113,7 +132,7 @@ fun ParentalHomeScreen(
 
         Spacer(Modifier.height(16.dp))
         Text(
-            "SMS keywords (if you text the Guard phone): PCA LOCK · PCA LOCKBLOCK · PCA UNLOCK",
+            "SMS keywords (from this Parent number only): PCA LOCK · PCA UNLOCK",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f)
         )
