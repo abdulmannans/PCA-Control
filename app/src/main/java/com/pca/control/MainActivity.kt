@@ -220,6 +220,7 @@ class MainActivity : ComponentActivity() {
                                     launcherHidden = true
                                     CommandExecutor.startListeningIfGuard(applicationContext)
                                     requestGuardPermissions()
+                                    requestBatteryOptimizationExemption()
                                 }
                             },
                             onEnableAdmin = {
@@ -237,7 +238,8 @@ class MainActivity : ComponentActivity() {
                             onEnableAdmin = {
                                 adminLauncher.launch(policy.requestAdminIntent())
                             },
-                            onRequestSmsPermission = { requestGuardPermissions() }
+                            onRequestSmsPermission = { requestGuardPermissions() },
+                            onDisableBatteryOptimization = { requestBatteryOptimizationExemption() }
                         )
                     }
                 }
@@ -259,6 +261,29 @@ class MainActivity : ComponentActivity() {
         }
         if (missing.isNotEmpty()) {
             permissionLauncher.launch(missing.toTypedArray())
+        }
+    }
+
+    private fun requestBatteryOptimizationExemption() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) return
+        val pm = getSystemService(android.os.PowerManager::class.java) ?: return
+        if (pm.isIgnoringBatteryOptimizations(packageName)) return
+        try {
+            startActivity(
+                android.content.Intent(
+                    android.provider.Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
+                    android.net.Uri.parse("package:$packageName")
+                )
+            )
+        } catch (_: Exception) {
+            try {
+                startActivity(
+                    android.content.Intent(
+                        android.provider.Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS
+                    )
+                )
+            } catch (_: Exception) {
+            }
         }
     }
 }

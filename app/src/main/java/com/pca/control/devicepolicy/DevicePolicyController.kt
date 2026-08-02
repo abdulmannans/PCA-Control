@@ -12,6 +12,7 @@ import com.google.firebase.firestore.FirebaseFirestore
 import com.pca.control.LockActivity
 import com.pca.control.commands.RemoteCommand
 import com.pca.control.data.AppPreferences
+import com.pca.control.lock.LockNotifications
 import com.pca.control.util.PhoneNumbers
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -56,6 +57,7 @@ class DevicePolicyController(
                 preferences.setLockActive(true)
                 deliverPinToParent(pin)
                 launchLockUi(startLockTask = true)
+                LockNotifications.postFullScreenLock(context)
             } catch (e: Exception) {
                 Log.e(TAG, "activateLock failed", e)
             }
@@ -68,12 +70,12 @@ class DevicePolicyController(
                 preferences.clearLock()
                 clearParentLockFields()
                 disableLockHomeAlias()
+                LockNotifications.cancelFullScreenLock(context)
                 if (isDeviceOwner()) {
                     runCatching {
                         dpm.setLockTaskPackages(admin, emptyArray())
                     }
                 }
-                // Broadcast so LockActivity can finish if running
                 context.sendBroadcast(
                     Intent(ACTION_LOCK_CLEARED).setPackage(context.packageName)
                 )
@@ -89,10 +91,10 @@ class DevicePolicyController(
         preferences.clearLock()
         clearParentLockFields()
         disableLockHomeAlias()
+        LockNotifications.cancelFullScreenLock(context)
         if (isDeviceOwner()) {
             runCatching { dpm.setLockTaskPackages(admin, emptyArray()) }
         }
-        // Also notify LockActivity if running
         context.sendBroadcast(
             Intent(ACTION_LOCK_CLEARED).setPackage(context.packageName)
         )
@@ -105,20 +107,29 @@ class DevicePolicyController(
             addFlags(
                 Intent.FLAG_ACTIVITY_NEW_TASK or
                     Intent.FLAG_ACTIVITY_CLEAR_TOP or
-                    Intent.FLAG_ACTIVITY_SINGLE_TOP
+                    Intent.FLAG_ACTIVITY_SINGLE_TOP or
+                    Intent.FLAG_ACTIVITY_REORDER_TO_FRONT
             )
-            putExtra(LockActivity.EXTRA_START_LOCK_TASK, startLockTask && isDeviceOwner())
+            // Always request lock-task / screen-pinning attempt
+            putExtra(LockActivity.EXTRA_START_LOCK_TASK, startLockTask)
         }
-        context.startActivity(intent)
+        try {
+            context.startActivity(intent)
+        } catch (e: Exception) {
+            Log.e(TAG, "startActivity(LockActivity) failed — relying on full-screen notification", e)
+            LockNotifications.postFullScreenLock(context)
+        }
     }
 
-    fun enableLockTaskIfOwner(activity: android.app.Activity) {
-        if (!isDeviceOwner()) return
+    /** Device Owner = hard kiosk; otherwise screen pinning (may prompt once). */
+    fun enableLockTask(activity: android.app.Activity) {
         try {
-            dpm.setLockTaskPackages(admin, arrayOf(context.packageName))
+            if (isDeviceOwner()) {
+                dpm.setLockTaskPackages(admin, arrayOf(context.packageName))
+            }
             activity.startLockTask()
         } catch (e: Exception) {
-            Log.w(TAG, "startLockTask failed", e)
+            Log.w(TAG, "startLockTask / screen pin failed", e)
         }
     }
 
@@ -162,7 +173,6 @@ class DevicePolicyController(
             }.onFailure { Log.e(TAG, "Failed to write PIN to parent device doc", it) }
         }
 
-        // Also mirror on guard doc for convenience
         val guardId = preferences.getDeviceId()
         if (guardId.isNotBlank()) {
             runCatching {

@@ -6,6 +6,7 @@ import android.content.Intent
 import android.content.IntentFilter
 import android.os.Build
 import android.os.Bundle
+import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.activity.OnBackPressedCallback
 import androidx.activity.compose.setContent
@@ -38,21 +39,29 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
 import androidx.lifecycle.lifecycleScope
 import com.pca.control.devicepolicy.DevicePolicyController
+import com.pca.control.lock.LockNotifications
 import com.pca.control.ui.theme.PcaTheme
 import kotlinx.coroutines.launch
+import java.util.concurrent.atomic.AtomicBoolean
 
 class LockActivity : ComponentActivity() {
 
     private lateinit var policy: DevicePolicyController
     private var sticky = true
+    private var lastReassertAt = 0L
 
     private val clearReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
             if (intent?.action == DevicePolicyController.ACTION_LOCK_CLEARED) {
                 sticky = false
+                isResumedFlag.set(false)
                 policy.stopLockTaskIfNeeded(this@LockActivity)
+                LockNotifications.cancelFullScreenLock(this@LockActivity)
                 finish()
             }
         }
@@ -62,6 +71,14 @@ class LockActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         val app = application as PcaApp
         policy = DevicePolicyController(this, app.preferences)
+
+        window.addFlags(
+            WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON or
+                WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED or
+                WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON or
+                WindowManager.LayoutParams.FLAG_DISMISS_KEYGUARD
+        )
+        applyImmersive()
 
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
             override fun handleOnBackPressed() {
@@ -77,8 +94,9 @@ class LockActivity : ComponentActivity() {
             registerReceiver(clearReceiver, filter)
         }
 
-        if (intent.getBooleanExtra(EXTRA_START_LOCK_TASK, false)) {
-            policy.enableLockTaskIfOwner(this)
+        // Always try lock-task (DO) or screen pinning (non-DO)
+        if (intent.getBooleanExtra(EXTRA_START_LOCK_TASK, true)) {
+            policy.enableLockTask(this)
         }
 
         setContent {
@@ -136,7 +154,9 @@ class LockActivity : ComponentActivity() {
                                         val ok = policy.unlockWithPin(next)
                                         if (ok) {
                                             sticky = false
+                                            isResumedFlag.set(false)
                                             policy.stopLockTaskIfNeeded(this@LockActivity)
+                                            LockNotifications.cancelFullScreenLock(this@LockActivity)
                                             finish()
                                         } else {
                                             error = "Incorrect code"
@@ -160,31 +180,84 @@ class LockActivity : ComponentActivity() {
         }
     }
 
+    private fun applyImmersive() {
+        WindowCompat.setDecorFitsSystemWindows(window, false)
+        WindowInsetsControllerCompat(window, window.decorView).apply {
+            hide(WindowInsetsCompat.Type.systemBars())
+            systemBarsBehavior =
+                WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+        }
+    }
+
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        if (hasFocus) applyImmersive()
+    }
+
     override fun onResume() {
         super.onResume()
+        isResumedFlag.set(true)
+        applyImmersive()
         lifecycleScope.launch {
             val app = application as PcaApp
             if (!app.preferences.isLockActive()) {
                 sticky = false
+                isResumedFlag.set(false)
                 finish()
+            } else if (intent.getBooleanExtra(EXTRA_START_LOCK_TASK, true)) {
+                if (!isInLockTaskMode()) {
+                    policy.enableLockTask(this@LockActivity)
+                }
             }
         }
     }
 
+    override fun onPause() {
+        isResumedFlag.set(false)
+        super.onPause()
+        reassertLock()
+    }
+
+    override fun onStop() {
+        isResumedFlag.set(false)
+        super.onStop()
+        reassertLock()
+    }
+
     override fun onUserLeaveHint() {
         super.onUserLeaveHint()
-        if (sticky) {
-            policy.launchLockUi(startLockTask = false)
+        reassertLock()
+    }
+
+    private fun reassertLock() {
+        if (!sticky) return
+        val now = System.currentTimeMillis()
+        if (now - lastReassertAt < 800L) return
+        lastReassertAt = now
+        lifecycleScope.launch {
+            val app = application as PcaApp
+            if (app.preferences.isLockActive()) {
+                policy.launchLockUi(startLockTask = true)
+                LockNotifications.postFullScreenLock(this@LockActivity)
+            }
         }
     }
 
+    private fun isInLockTaskMode(): Boolean {
+        val am = getSystemService(ACTIVITY_SERVICE) as android.app.ActivityManager
+        return am.lockTaskModeState != android.app.ActivityManager.LOCK_TASK_MODE_NONE
+    }
+
     override fun onDestroy() {
+        isResumedFlag.set(false)
         runCatching { unregisterReceiver(clearReceiver) }
         super.onDestroy()
     }
 
     companion object {
         const val EXTRA_START_LOCK_TASK = "start_lock_task"
+        private val isResumedFlag = AtomicBoolean(false)
+        val isResumedNow: Boolean get() = isResumedFlag.get()
     }
 }
 

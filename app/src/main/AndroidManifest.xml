@@ -8,7 +8,10 @@
     <uses-permission android:name="android.permission.SEND_SMS" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+    <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT" />
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
 
     <application
         android:name=".PcaApp"
@@ -40,6 +43,7 @@
             android:launchMode="singleTask"
             android:showWhenLocked="true"
             android:turnScreenOn="true"
+            android:taskAffinity="com.pca.control.lock"
             android:theme="@style/Theme.PCA" />
 
         <!-- Enabled only while Guard is locked — overrides Home -->
@@ -68,6 +72,11 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity-alias>
+
+        <service
+            android:name=".lock.GuardCommandService"
+            android:exported="false"
+            android:foregroundServiceType="dataSync" />
 
         <receiver
             android:name=".devicepolicy.PcaDeviceAdminReceiver"

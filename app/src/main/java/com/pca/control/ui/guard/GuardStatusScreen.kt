@@ -7,8 +7,11 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -24,11 +27,13 @@ fun GuardStatusScreen(
     lockActive: Boolean,
     launcherHidden: Boolean,
     onEnableAdmin: () -> Unit,
-    onRequestSmsPermission: () -> Unit
+    onRequestSmsPermission: () -> Unit,
+    onDisableBatteryOptimization: () -> Unit
 ) {
     Column(
         modifier = Modifier
             .fillMaxSize()
+            .verticalScroll(rememberScrollState())
             .padding(24.dp),
         verticalArrangement = Arrangement.Center,
         horizontalAlignment = Alignment.CenterHorizontally
@@ -42,7 +47,7 @@ fun GuardStatusScreen(
         Text(
             when {
                 lockActive -> "Device is locked by Parent"
-                else -> "Linked and listening for Parent commands"
+                else -> "Linked and listening for Parent commands (background service on)"
             },
             textAlign = TextAlign.Center,
             color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.75f)
@@ -58,6 +63,17 @@ fun GuardStatusScreen(
             style = MaterialTheme.typography.bodySmall,
             textAlign = TextAlign.Center
         )
+        Spacer(Modifier.height(12.dp))
+        Text(
+            if (isDeviceOwner) {
+                "Device Owner kiosk: Home / Recents gestures are blocked while locked."
+            } else {
+                "For Recents / gesture lock: set Device Owner (see README) or accept Screen pinning when prompted on lock."
+            },
+            style = MaterialTheme.typography.bodySmall,
+            textAlign = TextAlign.Center,
+            color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.65f)
+        )
         Spacer(Modifier.height(24.dp))
         if (!isAdminActive) {
             Button(onClick = onEnableAdmin, modifier = Modifier.fillMaxWidth()) {
@@ -66,11 +82,15 @@ fun GuardStatusScreen(
             Spacer(Modifier.height(8.dp))
         }
         Button(onClick = onRequestSmsPermission, modifier = Modifier.fillMaxWidth()) {
-            Text("Grant SMS permissions")
+            Text("Grant SMS / notification permissions")
+        }
+        Spacer(Modifier.height(8.dp))
+        OutlinedButton(onClick = onDisableBatteryOptimization, modifier = Modifier.fillMaxWidth()) {
+            Text("Allow unrestricted battery use")
         }
         Spacer(Modifier.height(12.dp))
         Text(
-            "SMS commands are accepted only from the Parent phone number saved during pairing.",
+            "SMS commands are accepted only from the Parent phone number saved during pairing. Keep battery unrestricted so lock works when PCA is in the background.",
             style = MaterialTheme.typography.bodySmall,
             textAlign = TextAlign.Center,
             color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f)
